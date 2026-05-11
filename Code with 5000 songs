@@ -1,0 +1,181 @@
+#include "Arduino.h"
+#include "Audio.h"
+#include "SD.h"
+#include "SPI.h"
+#include <Arduino_GFX_Library.h>
+
+// --- COLOR DEFINITIONS ---
+#define BLACK   0x0000
+#define WHITE   0xFFFF
+#define RED     0xF800
+#define GREEN   0x07E0
+#define BLUE    0x001F
+#define CYAN    0x07FF
+#define YELLOW  0xFFE0
+
+// --- PIN DEFINITIONS ---
+#define SD_CS          8
+#define SPI_MOSI      11
+#define SPI_SCK       12
+#define SPI_MISO      13
+#define I2S_BCLK       1
+#define I2S_LRC        2
+#define I2S_DOUT       3
+#define BTN_PLAY       4
+#define BTN_NEXT       5
+#define BTN_PREV       6
+#define BTN_SLEEP      7
+
+Audio audio;
+Arduino_DataBus *bus = new Arduino_ESP32SPI(9, -1, 12, 11, 13);
+Arduino_GFX *gfx = new Arduino_ST7789(bus, 10, 0, true, 240, 240);
+
+// --- DYNAMIC VARIABLES ---
+int fileCount = 0;
+int currentSongIndex = 0;
+int volume = 12;
+String currentSongName = "";
+
+// Helper to find a file by its "index" on the SD card
+String getFileNameByIndex(int index) {
+  File root = SD.open("/");
+  File file = root.openNextFile();
+  int count = 0;
+  while (file) {
+    String name = file.name();
+    if (name.endsWith(".mp3") || name.endsWith(".MP3")) {
+      if (count == index) {
+        String fullPath = "/" + name;
+        file.close();
+        root.close();
+        return fullPath;
+      }
+      count++;
+    }
+    file = root.openNextFile();
+  }
+  root.close();
+  return "";
+}
+
+void updateUI() {
+  gfx->fillScreen(BLACK);
+  gfx->setCursor(0, 40);
+  gfx->setTextColor(GREEN);
+  gfx->setTextSize(2);
+  gfx->println("NOW PLAYING:");
+  
+  gfx->setCursor(0, 80);
+  gfx->setTextColor(WHITE);
+  // Display only the filename (remove the /)
+  gfx->println(currentSongName.length() > 1 ? currentSongName.substring(1) : "No Files Found");
+
+  gfx->setCursor(0, 200);
+  gfx->setTextColor(YELLOW);
+  gfx->print("VOL: "); 
+  gfx->print(volume);
+  gfx->print("  [");
+  gfx->print(currentSongIndex + 1);
+  gfx->print("/");
+  gfx->print(fileCount);
+  gfx->println("]");
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  gfx->begin();
+  gfx->fillScreen(BLACK);
+  gfx->setTextColor(CYAN);
+  gfx->setTextSize(2);
+  gfx->setCursor(0, 20);
+  gfx->println("THE OSY-1");
+  gfx->println("VER: 1.0.5-MAX");
+  gfx->setTextColor(GREEN);
+  gfx->println("SCANNING SD...");
+
+  SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, SD_CS); 
+  if (!SD.begin(SD_CS)) {
+    gfx->setTextColor(RED);
+    gfx->println("SD FAIL!");
+    while(1);
+  }
+
+  // 1. Scan for total count (Handles up to 5000+ songs without crashing)
+  File root = SD.open("/");
+  File file = root.openNextFile();
+  while(file) {
+    String name = file.name();
+    if(name.endsWith(".mp3") || name.endsWith(".MP3")) fileCount++;
+    file = root.openNextFile();
+  }
+  root.close();
+
+  gfx->print("FILES: ");
+  gfx->println(fileCount);
+  delay(1000);
+
+  audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
+  audio.setVolume(volume); 
+  
+  if(fileCount > 0) {
+    currentSongName = getFileNameByIndex(currentSongIndex);
+    audio.connecttoFS(SD, currentSongName.c_str());
+  }
+
+  pinMode(BTN_PLAY, INPUT_PULLUP);
+  pinMode(BTN_NEXT, INPUT_PULLUP);
+  pinMode(BTN_PREV, INPUT_PULLUP);
+  pinMode(BTN_SLEEP, INPUT_PULLUP);
+
+  updateUI();
+}
+
+void loop() {
+  audio.loop();
+
+  if (digitalRead(BTN_PLAY) == LOW) {
+    audio.pauseResume();
+    delay(300);
+  }
+
+  if (digitalRead(BTN_NEXT) == LOW) {
+    unsigned long start = millis();
+    while(digitalRead(BTN_NEXT) == LOW); 
+    if (millis() - start > 500) {
+      volume = min(volume + 1, 21);
+      audio.setVolume(volume);
+    } else if (fileCount > 0) {
+      currentSongIndex = (currentSongIndex + 1) % fileCount;
+      currentSongName = getFileNameByIndex(currentSongIndex);
+      audio.connecttoFS(SD, currentSongName.c_str());
+    }
+    updateUI();
+  }
+
+  if (digitalRead(BTN_PREV) == LOW) {
+    unsigned long start = millis();
+    while(digitalRead(BTN_PREV) == LOW);
+    if (millis() - start > 500) {
+      volume = max(volume - 1, 0);
+      audio.setVolume(volume);
+    } else if (fileCount > 0) {
+      currentSongIndex = (currentSongIndex - 1 + fileCount) % fileCount;
+      currentSongName = getFileNameByIndex(currentSongIndex);
+      audio.connecttoFS(SD, currentSongName.c_str());
+    }
+    updateUI();
+  }
+
+  if (digitalRead(BTN_SLEEP) == LOW) {
+    gfx->fillScreen(BLACK);
+    gfx->setCursor(60, 100);
+    gfx->setTextColor(RED);
+    gfx->println("SLEEPING...");
+    delay(1000);
+    esp_sleep_enable_ext0_wakeup(GPIO_NUM_7, 0); 
+    esp_deep_sleep_start();
+  }
+}
+
+void audio_info(const char *info){ Serial.println(info); }
