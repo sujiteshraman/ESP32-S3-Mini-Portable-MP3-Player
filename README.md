@@ -1,3 +1,24 @@
+# THE OSY-1 (ESP32-S3 Portable MP3 Player)
+
+## Hardware Components
+* **MCU:** ESP32-S3 Super Mini
+* **DAC:** WeAct Studio PCM5100A (I2S)
+* **Display:** ST7789 240x240 LCD
+* **Storage:** MicroSD Card (SPI Mode)
+* **Battery:** 1800mAh Lipo
+
+## Pin Mapping
+| Component | Function | ESP32-S3 Pin |
+| :--- | :--- | :--- |
+| **I2S DAC** | BCK / LRC / DOUT | 1 / 2 / 3 |
+| **Buttons** | Play / Next / Prev / Sleep | 4 / 5 / 6 / 7 |
+| **SD Card** | CS / MOSI / SCK / MISO | 8 / 11 / 12 / 13 |
+| **Display** | DC / RST / MOSI / SCK | 9 / 10 / 11 / 12 |
+
+## Features
+* **Dual-Function Buttons:** Short press for track navigation, long press for volume control.
+* **Deep Sleep:** Dedicated sleep mode using Pin 7 for ultra-low power consumption.
+* **Custom UI:** "The OSY-1" custom boot sequence and real-time playback display.
 # THE OSY-1
 
 ### ESP32-S3 Portable MP3 Player
